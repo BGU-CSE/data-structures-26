@@ -1,0 +1,30 @@
+{
+  "data": {
+    "json_file":    "tmdb_data.json",
+    "vectors_file": "tmdb_vectors.npy"
+  },
+
+  "model": {
+    "name": "all-MiniLM-L6-v2"
+  },
+
+  "lsh": {
+    "num_tables":      20,
+    "num_bits":         8,
+    "hyperplane_seed": 42
+  },
+
+  "search": {
+    "top_k": 5
+  },
+
+  "comparison": {
+    "default_queries": [
+      "romance movie with julia roberts",
+      "thriller directed by christopher nolan",
+      "a slow-paced romantic drama film from the 1990s starring tom hanks about a man with a disability who falls in love and achieves great things despite all odds",
+      "space adventure with astronauts",
+      "animated movie for kids with animals"
+    ]
+  }
+}
