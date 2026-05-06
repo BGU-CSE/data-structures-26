@@ -1,11 +1,14 @@
 {
-  "data": {
-    "json_file":    "tmdb_data.json",
+  "data": {  
+    // "Paths are used in test_local.py. Update these if your data files are in a different location.",
+    "json_file":    "tmdb_data.json",   
     "vectors_file": "tmdb_vectors.npy"
   },
 
   "model": {
-    "name": "all-MiniLM-L6-v2"
+    "name": "all-MiniLM-L6-v2"  
+    //do not read this from the settings file, 
+    // you can simply import the model in your code and use it directly,
   },
 
   "lsh": {
@@ -22,8 +25,9 @@
     "default_queries": [
       "romance movie with julia roberts",
       "thriller directed by christopher nolan",
-      "a slow-paced romantic drama film from the 1990s starring tom hanks about a man with a disability who falls in love and achieves great things despite all odds",
-      "space adventure with astronauts",
+      "a heartwarming romantic story about two people who fall in love despite coming from very different backgrounds",
+      "a suspenseful psychological thriller where the main character slowly discovers a dark secret about their past",
+      "a science fiction film set in outer space involving space exploration and encounters with alien life",
       "animated movie for kids with animals"
     ]
   }

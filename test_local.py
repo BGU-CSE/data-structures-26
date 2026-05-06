@@ -12,8 +12,20 @@ What this checks
 ----------------
   Section 1  cosine_similarity        (no data files needed)
   Section 2  LSHIndex structure       (no data files needed)
-  Section 3  Full search recall       (needs dataf/ folder and model)
-             -- skipped automatically if data files are missing --
+  Section 3  Full search recall       (requires data files -- see below)
+
+Data files for Section 3
+------------------------
+  Section 3 needs the movie data files to run. Their paths are read from
+  settings.json (the "data" section). Make sure the files exist at those
+  paths relative to this script, or update settings.json to match your
+  local folder layout.
+
+  Default paths (from settings.json):
+      tmdb_data.json        -- movie metadata
+      tmdb_vectors.npy      -- pre-computed movie embeddings
+
+  If either file is missing, Section 3 will print an error and exit.
 
 This is NOT the real grader. Passing here does not guarantee a perfect
 VPL score, but it catches the most common crashes before submission.
@@ -238,9 +250,13 @@ if not (settings_ok and data_ok and vectors_ok):
     if not settings_ok:    missing.append("settings.json")
     if not data_ok:        missing.append(cfg["data"]["json_file"] if settings_ok else "tmdb_data.json")
     if not vectors_ok:     missing.append(cfg["data"]["vectors_file"] if settings_ok else "tmdb_vectors.npy")
-    print("  SKIPPED -- missing files: {}".format(", ".join(missing)))
-    print("  These files are present on VPL but may not be on your machine.")
-    print("  Section 1 and 2 results are still valid for pre-checking.")
+    print("  ERROR -- missing files: {}".format(", ".join(missing)))
+    print("  Section 3 requires these files to run.")
+    print("  Check that the paths in settings.json match your local folder layout:")
+    if settings_ok:
+        print("    data.json_file    = {}".format(cfg["data"]["json_file"]))
+        print("    data.vectors_file = {}".format(cfg["data"]["vectors_file"]))
+    print("  Sections 1 and 2 results above are still valid.")
 else:
     try:
         print("  Loading vectors and model (this may take ~30 seconds)...")
@@ -316,4 +332,25 @@ else:
                     print("    [{:.4f}]  {}".format(r.get("score", 0), r.get("title", "?")))
             except Exception as e:
                 print("  search() raised an error: {}".format(e))
-                tra
+                traceback.print_exc()
+
+    except Exception as e:
+        print("  ERROR during Section 3: {}".format(e))
+        traceback.print_exc()
+        failed += 5
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+total = passed + failed
+print()
+print("=" * 62)
+print("  Results: {}/{} checks passed".format(passed, total))
+if failed == 0:
+    print("  All checks passed -- looks good for VPL submission!")
+else:
+    print("  {} check(s) failed -- fix before submitting.".format(failed))
+print("=" * 62)
+print()
+print("Reminder: this is a pre-check, not the real grader.")
+print("The real grader may have additional edge cases.")
