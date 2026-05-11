@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSHIndex — interactive demo</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#fafaf8;--bg2:#f1efe8;--border:rgba(0,0,0,0.12);
+  --text:#1a1a1a;--text2:#666;--radius:8px;
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#1c1c1c;--bg2:#272727;--border:rgba(255,255,255,0.12);--text:#f0f0f0;--text2:#999;}
+}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);
+     padding:1.5rem;max-width:810px;margin:0 auto;line-height:1.6}
+h1{font-size:18px;font-weight:500;margin-bottom:4px}
+.subtitle{font-size:13px;color:var(--text2);margin-bottom:1.25rem}
+code{font-family:'Menlo','Consolas','Monaco',monospace;font-size:12px}
+.sl{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.hbox{background:var(--bg2);border-radius:var(--radius);padding:9px 12px;margin-bottom:9px}
+.pw{height:5px;background:var(--bg2);border-radius:3px;margin-bottom:5px;overflow:hidden}
+#prog{height:5px;border-radius:3px;background:#378ADD;transition:width .25s}
+.topbar{display:flex;align-items:flex-end;gap:14px;margin-bottom:12px;flex-wrap:wrap}
+.ctrl-g{display:flex;flex-direction:column;gap:4px}
+.ctrl-r{display:flex;align-items:center;gap:8px}
+input[type=range]{width:85px;accent-color:#378ADD}
+.tabs{display:flex;margin-bottom:14px}
+.tab{padding:7px 20px;border:0.5px solid var(--border);background:transparent;color:var(--text2);
+     cursor:pointer;font-size:13px;font-family:inherit;transition:background .15s}
+.tab:first-child{border-radius:8px 0 0 8px}
+.tab:last-child{border-radius:0 8px 8px 0;border-left:none}
+.tab.active{background:var(--bg2);color:var(--text);font-weight:500}
+.tab-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.main{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+canvas{border:0.5px solid var(--border);border-radius:var(--radius);display:block}
+.side{flex:1;min-width:200px;max-width:270px}
+.nav{display:flex;gap:8px;margin-top:10px;align-items:center}
+button{padding:6px 14px;border:0.5px solid var(--border);border-radius:var(--radius);
+       background:transparent;color:var(--text);font-size:13px;font-family:inherit;
+       cursor:pointer;transition:background .15s}
+button:hover:not(:disabled){background:var(--bg2)}
+button:disabled{opacity:.35;cursor:default}
+button.primary{background:var(--bg2);font-weight:500}
+select{padding:5px 8px;border:0.5px solid var(--border);border-radius:var(--radius);
+       background:var(--bg);color:var(--text);font-size:13px;font-family:inherit}
+.trow{display:flex;gap:4px;align-items:baseline;padding:1px 0;font-size:12px;font-family:monospace}
+#legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:10px;
+        border-top:0.5px solid var(--border)}
+.leg-row{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)}
+.dot-leg{width:9px;height:9px;border-radius:50%;flex-shrink:0;display:inline-block}
+</style>
+</head>
+<body>
+
+<h1>LSHIndex — interactive demo</h1>
+<p class="subtitle">Each table has its own independently generated <code>planes[t]</code>. Phase 1 builds all tables. Phase 2 queries every table and unions the candidates.</p>
+
+<div class="topbar">
+  <div class="ctrl-g">
+    <div class="sl">num_bits</div>
+    <div class="ctrl-r">
+      <input type="range" id="nb" min="1" max="3" value="2" step="1">
+      <span id="nb-out" style="font-size:14px;font-weight:500;min-width:16px">2</span>
+    </div>
+  </div>
+  <div class="ctrl-g">
+    <div class="sl">num_tables</div>
+    <div class="ctrl-r">
+      <input type="range" id="nt" min="1" max="3" value="2" step="1">
+      <span id="nt-out" style="font-size:14px;font-weight:500;min-width:16px">2</span>
+    </div>
+  </div>
+  <button id="btn-rand">new planes</button>
+  <div class="ctrl-g">
+    <div class="sl">speed</div>
+    <select id="spd">
+      <option value="1100">slow</option>
+      <option value="500" selected>normal</option>
+      <option value="110">fast</option>
+    </select>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" id="tab-build" onclick="switchPhase('build')">
+    <span class="tab-dot" style="background:#378ADD"></span>Phase 1 — _build_tables()
+  </button>
+  <button class="tab" id="tab-query" onclick="switchPhase('query')">
+    <span class="tab-dot" style="background:#1D9E75"></span>Phase 2 — query()
+  </button>
+</div>
+
+<div id="build-progress">
+  <div class="pw"><div id="prog" style="width:0%"></div></div>
+  <div id="prog-lbl" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>
+</div>
+
+<div class="main">
+  <canvas id="lsh-cv" width="378" height="318"></canvas>
+  <div class="side" id="side-build"></div>
+  <div class="side" id="side-query" style="display:none"></div>
+</div>
+
+<div class="nav" id="nav-build">
+  <button id="btn-prev">← prev</button>
+  <button id="btn-play">▶ play</button>
+  <button id="btn-next">next →</button>
+  <span id="step-ctr" style="font-size:12px;color:var(--text2);margin-left:6px"></span>
+</div>
+<div class="nav" id="nav-query" style="display:none">
+  <button id="btn-clear">clear q_vec</button>
+  <span style="font-size:12px;color:var(--text2);margin-left:4px">click canvas to place q_vec</span>
+</div>
+
+<div id="legend"></div>
+
+<script>
+(function(){
+const cv=document.getElementById('lsh-cv');
+const ctx=cv.getContext('2d');
+const W=cv.width,H=cv.height,CX=W/2,CY=H/2,SC=130;
+const N=24;
+
+const BCOLS=['#378ADD','#1D9E75','#D85A30','#D4537E','#7F77DD','#639922','#BA7517','#A32D2D'];
+const BIT_COLS=['#185FA5','#0F6E56','#993C1D','#534AB7','#993556'];
+const TBL_BADGE=['#185FA5','#993C1D','#0F6E56'];
+const TBL_DASH=[[5,4],[10,4],[2,3]];
+
+// ── shared state ─────────────────────────────────────────────
+let pts=[],numBits=2,numTables=2,hpSeed=7;
+let allPlanes=[];   // allPlanes[t][i] = {nx,ny}
+let allHashes=[];   // allHashes[t][i] = {key,bits,dots}
+
+// ── build phase state ─────────────────────────────────────────
+let buildTable=0,buildStep=-1,autoPlay=false,autoTimer=null;
+
+// ── query phase state ─────────────────────────────────────────
+let qPt=null;
+let phase='build';
+
+// ── helpers ───────────────────────────────────────────────────
+function lcg(s){return((s*1664525+1013904223)&0x7fffffff);}
+
+function mkPts(seed){
+  let s=seed;const r=[];
+  for(let i=0;i<N;i++){
+    s=lcg(s);const a=(s/0x7fffffff)*2*Math.PI;
+    s=lcg(s);const rad=0.52+((s/0x7fffffff)*0.42);
+    r.push({x:Math.cos(a)*rad,y:Math.sin(a)*rad});
+  }
+  return r;
+}
+
+function genPlanes(seed,k){
+  let s=seed;const r=[];
+  for(let i=0;i<k;i++){
+    s=lcg(s);let nx=(s/0x7fffffff)*2-1;
+    s=lcg(s);let ny=(s/0x7fffffff)*2-1;
+    const len=Math.sqrt(nx*nx+ny*ny);
+    r.push({nx:nx/len,ny:ny/len});
+  }
+  return r;
+}
+
+function hashWith(pt,planes){
+  let key=0;const bits=[],dots=[];
+  for(let i=0;i<planes.length;i++){
+    const d=pt.x*planes[i].nx+pt.y*planes[i].ny;
+    const b=d>=0?1:0;key+=b*Math.pow(2,i);bits.push(b);dots.push(d);
+  }
+  return{key:Math.round(key),bits,dots};
+}
+
+function mkAll(){
+  allPlanes=[];allHashes=[];
+  for(let t=0;t<numTables;t++){
+    const seed=lcg(hpSeed*(t*7+1)+t*13);
+    const planes=genPlanes(seed,numBits);
+    allPlanes.push(planes);
+    allHashes.push(pts.map(pt=>hashWith(pt,planes)));
+  }
+}
+
+function getTables(t,upTo){
+  const tbl={};
+  for(let i=0;i<=upTo&&i<N;i++){
+    const k=allHashes[t][i].key;
+    if(!tbl[k])tbl[k]=[];tbl[k].push(i);
+  }
+  return tbl;
+}
+
+function cosSim(a,b){
+  const d=a.x*b.x+a.y*b.y;
+  const na=Math.sqrt(a.x*a.x+a.y*a.y),nb=Math.sqrt(b.x*b.x+b.y*b.y);
+  if(!na||!nb)return 0;return d/(na*nb);
+}
+
+function toCv(x,y){return{cx:CX+x*SC,cy:CY-y*SC};}
+function fromCv(cx,cy){return{x:(cx-CX)/SC,y:-(cy-CY)/SC};}
+function bCol(k){return BCOLS[k%BCOLS.length];}
+function hexRgb(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+const dk=()=>matchMedia('(prefers-color-scheme:dark)').matches;
+
+// ── canvas ────────────────────────────────────────────────────
+function drawBackground(t){
+  const planes=allPlanes[t];
+  const id=ctx.createImageData(W,H);
+  const dark=dk();
+  for(let py=0;py<H;py++)for(let px=0;px<W;px++){
+    const v=fromCv(px,py);let key=0;
+    for(let i=0;i<planes.length;i++){const d=v.x*planes[i].nx+v.y*planes[i].ny;if(d>=0)key+=Math.pow(2,i);}
+    const[r,g,b]=hexRgb(bCol(Math.round(key)));const ii=(py*W+px)*4;
+    id.data[ii]=r;id.data[ii+1]=g;id.data[ii+2]=b;id.data[ii+3]=dark?22:15;
+  }
+  ctx.putImageData(id,0,0);
+}
+
+function drawPlanes(showTables){
+  showTables.forEach(t=>{
+    const planes=allPlanes[t];
+    const dash=TBL_DASH[t%TBL_DASH.length];
+    planes.forEach((hp,i)=>{
+      const perp={x:-hp.ny,y:hp.nx};
+      const p1=toCv(perp.x*2.1,perp.y*2.1),p2=toCv(-perp.x*2.1,-perp.y*2.1);
+      const col=BIT_COLS[(t*2+i)%BIT_COLS.length];
+      ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.setLineDash(dash);
+      ctx.beginPath();ctx.moveTo(p1.cx,p1.cy);ctx.lineTo(p2.cx,p2.cy);ctx.stroke();ctx.setLineDash([]);
+      const ae=toCv(hp.nx*0.52,hp.ny*0.52);
+      ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(CX,CY);ctx.lineTo(ae.cx,ae.cy);ctx.stroke();
+      ctx.fillStyle=col;ctx.font='500 10px system-ui,sans-serif';
+      ctx.fillText('planes['+t+']['+i+']',ae.cx+4,ae.cy-3);
+    });
+  });
+}
+
+function drawAxes(){
+  const dark=dk();
+  ctx.strokeStyle=dark?'rgba(255,255,255,.09)':'rgba(0,0,0,.09)';
+  ctx.lineWidth=0.5;ctx.beginPath();
+  ctx.moveTo(CX,6);ctx.lineTo(CX,H-6);ctx.moveTo(6,CY);ctx.lineTo(W-6,CY);ctx.stroke();
+}
+
+function drawBuildPhase(){
+  const dark=dk();
+  ctx.fillStyle=dark?'#1c1c1c':'#fafaf8';ctx.fillRect(0,0,W,H);
+  const tIdx=buildTable<numTables?buildTable:numTables-1;
+  drawBackground(tIdx);
+  drawAxes();
+  drawPlanes([tIdx]);
+
+  const done=buildTable>=numTables;
+  pts.forEach((pt,i)=>{
+    const tForColor=buildTable<numTables?buildTable:numTables-1;
+    const{key}=allHashes[tForColor][i];
+    const{cx,cy}=toCv(pt.x,pt.y);
+    // Current point: only highlight during mid-step (buildStep >= 0)
+    const isCurr=!done&&buildTable<numTables&&buildStep>=0&&i===buildStep;
+    // Past: either all done, or we already passed this index in the current table,
+    // or we are starting a new table (buildStep=-1 but buildTable>0 means all pts
+    // were processed in a previous table — show them colored)
+    const isPast=done||
+      (!done&&buildTable<numTables&&buildStep>=0&&i<buildStep)||
+      (!done&&buildTable>0&&buildStep===-1);
+
+    if(isCurr){
+      ctx.beginPath();ctx.arc(cx,cy,13,0,Math.PI*2);
+      ctx.strokeStyle=dark?'rgba(239,159,39,.25)':'rgba(239,159,39,.2)';ctx.lineWidth=1;ctx.stroke();
+    }
+    ctx.beginPath();ctx.arc(cx,cy,isCurr?8:isPast?5.5:4,0,Math.PI*2);
+    ctx.fillStyle=isCurr?'#EF9F27':isPast?bCol(key):(dark?'#404038':'#c0c0b8');ctx.fill();
+    ctx.strokeStyle=isCurr?'#fff':isPast?bCol(key):(dark?'#525249':'#ababab');
+    ctx.lineWidth=isCurr?2.5:1;ctx.stroke();
+    if(isCurr||isPast){
+      ctx.fillStyle=dark?'rgba(255,255,255,.5)':'rgba(0,0,0,.4)';
+      ctx.font='10px system-ui,sans-serif';ctx.fillText(i,cx+(isCurr?10:7),cy-(isCurr?10:7));
+    }
+  });
+}
+
+function drawQueryPhase(){
+  const dark=dk();
+  ctx.fillStyle=dark?'#1c1c1c':'#fafaf8';ctx.fillRect(0,0,W,H);
+  drawBackground(0);
+  drawAxes();
+  const all=[];for(let t=0;t<numTables;t++)all.push(t);
+  drawPlanes(all);
+
+  let candSet=new Set();
+  if(qPt){
+    for(let t=0;t<numTables;t++){
+      const h=hashWith(qPt,allPlanes[t]);
+      const tbl=getTables(t,N-1);
+      (tbl[h.key]||[]).forEach(idx=>candSet.add(idx));
+    }
+  }
+
+  pts.forEach((pt,i)=>{
+    const{cx,cy}=toCv(pt.x,pt.y);
+    const cand=candSet.has(i);
+    ctx.beginPath();ctx.arc(cx,cy,cand?7:5,0,Math.PI*2);
+    const key=allHashes[0][i].key;
+    ctx.fillStyle=cand?bCol(key):bCol(key)+'77';ctx.fill();
+    ctx.strokeStyle=cand?'#fff':bCol(key)+'99';ctx.lineWidth=cand?2:1;ctx.stroke();
+    ctx.fillStyle=dark?'rgba(255,255,255,.45)':'rgba(0,0,0,.38)';
+    ctx.font='10px system-ui,sans-serif';ctx.fillText(i,cx+7,cy-7);
+  });
+
+  if(qPt){
+    const{cx,cy}=toCv(qPt.x,qPt.y);
+    ctx.beginPath();ctx.arc(cx,cy,13,0,Math.PI*2);
+    ctx.strokeStyle=dark?'rgba(255,255,255,.18)':'rgba(0,0,0,.12)';ctx.lineWidth=1;ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,8,0,Math.PI*2);
+    ctx.fillStyle=dark?'#f0f0f0':'#111';ctx.fill();
+    ctx.strokeStyle='#EF9F27';ctx.lineWidth=3;ctx.stroke();
+    ctx.fillStyle=dark?'#f0f0f0':'#111';ctx.font='500 11px system-ui,sans-serif';
+    ctx.fillText('q_vec',cx+13,cy-6);
+  }
+}
+
+// ── build panel ───────────────────────────────────────────────
+function renderPlanesBox(t){
+  const planes=allPlanes[t];
+  const badge=TBL_BADGE[t%TBL_BADGE.length];
+  let h=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+    <span class="sl" style="margin-bottom:0">self.planes[${t}]</span>
+    <span style="font-size:10px;color:${badge};background:${badge}22;padding:1px 6px;border-radius:4px;font-weight:500">table ${t}</span>
+    <span style="font-size:11px;color:var(--text2)">shape (${planes.length}, d=2)</span>
+  </div>`;
+  h+='<div class="hbox" style="font-family:monospace;font-size:12px;line-height:2">[<br>';
+  planes.forEach((hp,i)=>{
+    const nx=(hp.nx>=0?'+':'')+hp.nx.toFixed(4);
+    const ny=(hp.ny>=0?'+':'')+hp.ny.toFixed(4);
+    const col=BIT_COLS[(t*2+i)%BIT_COLS.length];
+    h+=`<div style="display:flex;align-items:center;gap:8px;padding:1px 0">
+      <span style="color:var(--text2)">&nbsp;&nbsp;</span>
+      <span style="color:${col};min-width:14px">${i}:</span>
+      <span>[<span style="color:${col}">${nx}, ${ny}</span>]</span>
+      <span style="font-size:10px;color:var(--text2)">← planes[${t}][${i}]</span>
+    </div>`;
+  });
+  h+=']</div>';return h;
+}
+
+function renderTablesBox(t,upTo){
+  const tables=getTables(t,upTo);
+  const newKey=upTo>=0&&upTo<N?allHashes[t][upTo].key:null;
+  const nb=Math.pow(2,numBits);
+  const badge=TBL_BADGE[t%TBL_BADGE.length];
+  let h=`<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+    <span class="sl" style="margin-bottom:0">self.tables[${t}]</span>
+    <span style="font-size:10px;color:${badge};background:${badge}22;padding:1px 6px;border-radius:4px;font-weight:500">table ${t}</span>
+  </div>`;
+  h+='<div class="hbox" style="font-family:monospace;font-size:12px;line-height:1.95">{<br>';
+  for(let k=0;k<nb;k++){
+    const vals=tables[k]||[],isNew=k===newKey,col=bCol(k);
+    let vhtml;
+    if(!vals.length){vhtml=`<span style="color:var(--text2)">[]</span>`;}
+    else if(isNew){
+      const last=vals[vals.length-1],pre=vals.slice(0,-1);
+      vhtml=`<span style="color:${col}">[${pre.length?pre.join(', ')+', ':''}<strong style="color:${col}">${last}</strong>]</span>`;
+    } else {
+      const disp=vals.length>9?vals.slice(0,8).join(', ')+'…':vals.join(', ');
+      vhtml=`<span style="color:${col}">[${disp}]</span>`;
+    }
+    h+=`<div class="trow"><span style="color:var(--text2);min-width:28px">&nbsp;&nbsp;${k}:</span>${vhtml}${isNew?'  <span style="font-size:10px;color:var(--text2)">← added</span>':''}</div>`;
+  }
+  h+='}</div>';return h;
+}
+
+function renderBuildPanel(){
+  const el=document.getElementById('side-build');
+  let html='';
+  const allDone=buildTable>=numTables;
+
+  if(buildStep===-1&&buildTable===0){
+    // ── initial state: show all planes before any vectors are processed ──
+    html=`<div class="hbox" style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:9px">
+      ${numTables} independent set${numTables>1?'s':''} of random planes — one per table.
+      Each table hashes vectors differently, so near-neighbors missed by one table
+      may be caught by another.<br><br>
+      Press <strong style="font-weight:500;color:var(--text)">▶ play</strong> to start.
+    </div>`;
+    for(let t=0;t<numTables;t++) html+=renderPlanesBox(t);
+
+  } else if(allDone){
+    // ── all tables complete ──
+    html=`<div class="hbox" style="font-size:13px;line-height:1.8;margin-bottom:9px">
+      <div style="font-weight:500;font-size:14px;color:#0F6E56;margin-bottom:6px">✓ all ${numTables} table${numTables>1?'s':''} built</div>
+      <div style="font-family:monospace;color:var(--text2)">${N} vectors × ${numTables} table${numTables>1?'s':''} indexed</div>
+      <div style="margin-top:10px"><button class="primary" onclick="switchPhase('query')">→ search with this index</button></div>
+    </div>`;
+    for(let t=0;t<numTables;t++) html+=renderTablesBox(t,N-1);
+
+  } else if(buildStep===-1){
+    // ── transition: finished table (buildTable-1), about to start table buildTable ──
+    const prevT=buildTable-1;
+    const badge=TBL_BADGE[buildTable%TBL_BADGE.length];
+    html=`<div class="hbox" style="font-size:13px;line-height:1.8;margin-bottom:9px">
+      <div style="font-weight:500;font-size:13px;color:#0F6E56;margin-bottom:4px">✓ table ${prevT} complete</div>
+      <div style="color:var(--text2);font-size:12px;margin-bottom:8px">${N} vectors hashed with <code>planes[${prevT}]</code></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+        <span style="font-size:10px;color:${badge};background:${badge}22;padding:1px 6px;border-radius:4px;font-weight:500">table ${buildTable}</span>
+        <span style="color:var(--text2)">new independent planes ready →</span>
+      </div>
+    </div>`;
+    // show completed tables
+    for(let t=0;t<buildTable;t++) html+=renderTablesBox(t,N-1);
+    // show the upcoming table's planes
+    html+=renderPlanesBox(buildTable);
+
+  } else {
+    // ── mid-step: processing _vectors[buildStep] in table buildTable ──
+    const h=allHashes[buildTable][buildStep];
+    const bitLines=h.bits.map((b,i)=>{
+      const d=h.dots[i],sign=d>=0?'≥':'<',dStr=(d>=0?'+':'')+d.toFixed(3);
+      const col=BIT_COLS[(buildTable*2+i)%BIT_COLS.length];
+      return`<div style="display:flex;gap:5px;flex-wrap:wrap;padding:1px 0;font-size:12px;font-family:monospace">
+        <span style="color:var(--text2)">dot(v,planes[${buildTable}][${i}])</span>
+        <span style="color:${col}">${dStr} ${sign} 0</span>
+        <span style="color:var(--text2)">→</span>
+        <strong style="color:${col}">bit_${i}=${b}</strong>
+      </div>`;
+    }).join('');
+    const formula=h.bits.map((b,i)=>`${b}·2<sup>${i}</sup>`).join('+');
+    const badge=TBL_BADGE[buildTable%TBL_BADGE.length];
+    html=`<div class="hbox" style="line-height:1.8;margin-bottom:9px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-weight:500;font-size:13px">_vectors[${buildStep}]  →  key = ${h.key}</span>
+        <span style="font-size:10px;color:${badge};background:${badge}22;padding:1px 6px;border-radius:4px;font-weight:500">table ${buildTable}</span>
+      </div>
+      <div style="margin-bottom:6px">${bitLines}</div>
+      <div style="font-family:monospace;font-size:12px;color:var(--text2);border-top:0.5px solid var(--border);padding-top:6px">
+        key = ${formula} = <strong style="color:var(--text)">${h.key}</strong>
+      </div>
+      <div style="font-family:monospace;font-size:13px;color:#0F6E56;margin-top:4px">
+        tables[${buildTable}][${h.key}].append(${buildStep})
+      </div>
+    </div>`;
+    for(let t=0;t<buildTable;t++) html+=renderTablesBox(t,N-1);
+    html+=renderTablesBox(buildTable,buildStep);
+  }
+  el.innerHTML=html;
+}
+
+function updateBuildProgress(){
+  const totalSteps=numTables*N;
+  const doneSteps=buildTable*N+Math.max(0,buildStep+1);
+  const pct=Math.min(doneSteps/totalSteps*100,100);
+  document.getElementById('prog').style.width=pct+'%';
+  const allDone=buildTable>=numTables;
+  let lbl;
+  if(allDone) lbl=`complete — ${numTables} table${numTables>1?'s':''} built`;
+  else if(buildStep===-1&&buildTable===0) lbl=`ready — ${N} vectors × ${numTables} table${numTables>1?'s':''}`;
+  else if(buildStep===-1) lbl=`table ${buildTable-1} done — starting table ${buildTable}`;
+  else lbl=`table ${buildTable}: _vectors[${buildStep}]  (${buildStep+1}/${N})`;
+  document.getElementById('prog-lbl').textContent=lbl;
+  document.getElementById('step-ctr').textContent=
+    allDone?`done ✓`:`t${buildTable}: ${Math.max(0,buildStep+1)} / ${N}`;
+  document.getElementById('btn-prev').disabled=(buildTable===0&&buildStep<=-1);
+  document.getElementById('btn-next').disabled=allDone;
+}
+
+// ── query panel ───────────────────────────────────────────────
+function renderQueryPanel(){
+  const el=document.getElementById('side-query');
+  if(!qPt){
+    el.innerHTML=`<div class="hbox" style="font-size:13px;color:var(--text2);line-height:1.7">
+      <strong style="font-weight:500;color:var(--text)">query(q_vec, k)</strong> hashes <code>q_vec</code>
+      with <em>each</em> table's planes, looks up <code>tables[t][key_t]</code> in every table,
+      takes the <strong style="font-weight:500;color:var(--text)">union</strong> of all candidates,
+      scores with <code>cosine_similarity</code>, and returns <code>[(score, idx), ...]</code>.<br><br>
+      Click the canvas to place <code>q_vec</code>.
+    </div>`;
+    return;
+  }
+
+  let allCandSet=new Set();
+  let perTable=[];
+  for(let t=0;t<numTables;t++){
+    const h=hashWith(qPt,allPlanes[t]);
+    const tbl=getTables(t,N-1);
+    const cands=tbl[h.key]||[];
+    cands.forEach(idx=>allCandSet.add(idx));
+    perTable.push({t,key:h.key,bits:h.bits,cands});
+  }
+  const allCands=[...allCandSet];
+  const topk=allCands.map(i=>({i,s:cosSim(qPt,pts[i])})).sort((a,b)=>b.s-a.s).slice(0,5);
+
+  let html='';
+  perTable.forEach(({t,key,bits,cands})=>{
+    const badge=TBL_BADGE[t%TBL_BADGE.length];
+    const bitsHtml=bits.map((b,i)=>`<span style="display:inline-block;padding:2px 5px;margin:1px;
+      border-radius:4px;font-family:monospace;font-size:11px;
+      background:${b?'#e6f1fb':'var(--bg2)'};color:${b?'#185FA5':'var(--text2)'};
+      ${b?'':'border:0.5px solid var(--border)'}">b${i}=${b}</span>`).join('');
+    const col=bCol(key);
+    html+=`<div class="hbox" style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+        <span style="font-weight:500;font-size:12px">table ${t}</span>
+        <span style="font-size:10px;color:${badge};background:${badge}22;padding:1px 6px;border-radius:4px">planes[${t}]</span>
+      </div>
+      <div style="margin-bottom:4px">${bitsHtml}<span style="font-family:monospace;font-size:12px;margin-left:5px">→ key=${key}</span></div>
+      <div style="font-family:monospace;font-size:12px;color:var(--text2)">tables[${t}][${key}] = <span style="color:${cands.length?col:'var(--text2)'}">
+        ${cands.length?'['+cands.join(', ')+']':'[]'}</span>
+        <span style="font-size:10px;color:var(--text2);margin-left:4px">${cands.length} idx</span>
+      </div>
+    </div>`;
+  });
+
+  html+=`<div class="hbox" style="margin-bottom:8px">
+    <div class="sl" style="margin-bottom:4px">union of all candidates</div>
+    <div style="font-family:monospace;font-size:12px">
+      ${allCands.length?'['+allCands.join(', ')+']':'[] — empty'}
+      <span style="font-size:10px;color:var(--text2);margin-left:4px">${allCands.length} unique idx</span>
+    </div>
+  </div>`;
+
+  html+=`<div class="hbox">
+    <div class="sl" style="margin-bottom:5px">top-k  <span style="font-weight:400;text-transform:none;letter-spacing:0">[(score, idx), ...]</span></div>`;
+  if(!topk.length){
+    html+=`<span style="font-size:13px;color:var(--text2)">no candidates</span>`;
+  } else {
+    topk.forEach((r,rank)=>{
+      const pct=Math.max(0,r.s)*100;
+      html+=`<div style="margin-bottom:5px">
+        <div style="font-family:monospace;font-size:12px;padding:1px 0">
+          <span style="color:var(--text2)">#${rank+1} (${r.s.toFixed(3)}, ${r.i})</span>
+        </div>
+        <div style="height:4px;background:var(--bg2);border-radius:2px;margin-top:2px">
+          <div style="height:4px;border-radius:2px;width:${pct.toFixed(1)}%;background:#378ADD"></div>
+        </div>
+      </div>`;
+    });
+  }
+  html+=`</div>`;
+  el.innerHTML=html;
+}
+
+// ── legend ────────────────────────────────────────────────────
+function updateLegend(){
+  const nb=Math.pow(2,numBits),leg=document.getElementById('legend');
+  leg.innerHTML='<span style="font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;align-self:center">bucket colours (key):</span>';
+  for(let k=0;k<nb;k++){
+    const bits=[];for(let b=0;b<numBits;b++)bits.push((k>>b)&1);
+    const row=document.createElement('span');row.className='leg-row';
+    row.innerHTML=`<span class="dot-leg" style="background:${bCol(k)}"></span><span style="font-family:monospace">key=${k} [${bits.join('')}]</span>`;
+    leg.appendChild(row);
+  }
+}
+
+// ── phase switcher ────────────────────────────────────────────
+window.switchPhase=function(p){
+  phase=p;
+  document.getElementById('tab-build').classList.toggle('active',p==='build');
+  document.getElementById('tab-query').classList.toggle('active',p==='query');
+  document.getElementById('side-build').style.display=p==='build'?'':'none';
+  document.getElementById('side-query').style.display=p==='query'?'':'none';
+  document.getElementById('nav-build').style.display=p==='build'?'':'none';
+  document.getElementById('nav-query').style.display=p==='query'?'':'none';
+  document.getElementById('build-progress').style.display=p==='build'?'':'none';
+  cv.style.cursor=p==='query'?'crosshair':'default';
+  render();
+};
+
+// ── render ────────────────────────────────────────────────────
+function render(){
+  if(phase==='build'){drawBuildPhase();renderBuildPanel();updateBuildProgress();}
+  else{drawQueryPhase();renderQueryPanel();}
+  updateLegend();
+}
+
+// ── build controls ────────────────────────────────────────────
+function goNext(){
+  if(buildTable>=numTables) return;
+  buildStep++;
+  if(buildStep>=N){buildTable++;buildStep=-1;
+    if(buildTable>=numTables&&autoPlay) stopAuto();
+  }
+  render();
+}
+function goPrev(){
+  if(buildTable===0&&buildStep<=-1) return;
+  buildStep--;
+  if(buildStep<-1){buildTable--;buildStep=N-1;}
+  render();
+}
+function stopAuto(){
+  autoPlay=false;if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
+  document.getElementById('btn-play').textContent='▶ play';
+}
+function startAuto(){
+  if(buildTable>=numTables){buildTable=0;buildStep=-1;render();}
+  autoPlay=true;document.getElementById('btn-play').textContent='⏸ pause';
+  const spd=parseInt(document.getElementById('spd').value);
+  autoTimer=setInterval(()=>{if(buildTable>=numTables){stopAuto();return;}goNext();},spd);
+}
+function resetBuild(){stopAuto();buildTable=0;buildStep=-1;render();}
+
+document.getElementById('btn-prev').addEventListener('click',()=>{stopAuto();goPrev();});
+document.getElementById('btn-next').addEventListener('click',()=>{stopAuto();goNext();});
+document.getElementById('btn-play').addEventListener('click',()=>{if(autoPlay)stopAuto();else startAuto();});
+
+// ── query controls ────────────────────────────────────────────
+cv.addEventListener('click',function(e){
+  if(phase!=='query') return;
+  const r=cv.getBoundingClientRect(),sx=W/r.width,sy=H/r.height;
+  qPt=fromCv((e.clientX-r.left)*sx,(e.clientY-r.top)*sy);
+  render();
+});
+document.getElementById('btn-clear').addEventListener('click',()=>{qPt=null;render();});
+
+// ── global controls ───────────────────────────────────────────
+document.getElementById('nb').addEventListener('input',function(){
+  numBits=parseInt(this.value);document.getElementById('nb-out').textContent=numBits;
+  mkAll();resetBuild();qPt=null;
+});
+document.getElementById('nt').addEventListener('input',function(){
+  numTables=parseInt(this.value);document.getElementById('nt-out').textContent=numTables;
+  mkAll();resetBuild();qPt=null;
+});
+document.getElementById('btn-rand').addEventListener('click',function(){
+  hpSeed=lcg(hpSeed*31+13);mkAll();resetBuild();qPt=null;
+});
+document.getElementById('spd').addEventListener('change',function(){
+  if(autoPlay){stopAuto();startAuto();}
+});
+
+// ── init ──────────────────────────────────────────────────────
+pts=mkPts(42);mkAll();render();
+})();
+</script>
+</body>
+</html>
