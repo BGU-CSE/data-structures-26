@@ -57,6 +57,173 @@ select{padding:5px 8px;border:0.5px solid var(--border);border-radius:var(--radi
 <h1>LSHIndex — interactive demo</h1>
 <p class="subtitle">Each table has its own independently generated <code>planes[t]</code>. Phase 1 builds all tables. Phase 2 queries every table and unions the candidates.</p>
 
+<details id="expl-det" style="margin-bottom:1.25rem;border:0.5px solid var(--border);border-radius:var(--radius);padding:10px 14px">
+<summary style="cursor:pointer;font-size:13px;font-weight:500;color:var(--text);list-style:none;display:flex;align-items:center;gap:8px;user-select:none">
+  <span id="expl-arr" style="font-size:10px;color:var(--text2);display:inline-block;transition:transform .2s">▶</span>
+  How hyperplanes work — 3D visualization
+</summary>
+<div style="margin-top:12px">
+<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+  <canvas id="hp3d" width="290" height="270" style="border-radius:var(--radius);flex-shrink:0;background:#0c0c0c"></canvas>
+  <div style="min-width:168px;flex:1;display:flex;flex-direction:column;gap:8px">
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;font-size:12px;line-height:1.95">
+      <div style="font-weight:600;color:#EF9F27;margin-bottom:5px;font-size:11px;text-transform:uppercase;letter-spacing:.04em">hashing query vector v</div>
+      <div style="font-family:monospace;font-size:11px;color:#185FA5">dot(v, planes[0]) = +0.23</div>
+      <div style="font-family:monospace;font-size:11px;color:#185FA5;margin-bottom:6px">&nbsp;&nbsp;≥ 0 → bit<sub>0</sub> = 1 → <span style="color:#5090e8">blue side</span></div>
+      <div style="border-top:0.5px solid var(--border);padding-top:6px;font-size:11px;color:var(--text2)">
+        With <code>num_bits = K</code> planes:<br>
+        2<sup>K</sup> buckets total<br>
+        <span style="color:var(--text)">K=1 → 2 &nbsp;K=2 → 4 &nbsp;K=3 → 8</span>
+      </div>
+    </div>
+    <div style="background:var(--bg2);border-radius:var(--radius);padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.75">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#5090e8;vertical-align:middle;margin-right:5px"></span>dot ≥ 0 &nbsp;→ bit = 1<br>
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e05050;vertical-align:middle;margin-right:5px"></span>dot &lt; 0 &nbsp;→ bit = 0<br>
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#EF9F27;vertical-align:middle;margin-right:5px"></span>query vector v
+    </div>
+  </div>
+</div>
+<p style="font-size:12px;color:var(--text2);margin-top:10px;line-height:1.65">
+  In the real system, movie vectors live in <strong style="color:var(--text)">384 dimensions</strong> — impossible to draw directly. The box above is a 3D stand-in: the <span style="color:rgba(60,200,100,0.9)">green plane</span> is one hyperplane slicing the space in two. Every vector gets <strong style="color:var(--text)">bit = 1</strong> if it lies on the same side as the normal arrow, <strong style="color:var(--text)">bit = 0</strong> otherwise. With <code>num_bits</code> planes you divide space into 2<sup>num_bits</sup> buckets. A single plane may accidentally split two similar movies; using <strong style="color:var(--text)">num_tables</strong> independent tables (each with freshly drawn random planes) ensures similar movies share a bucket in at least one table.
+</p>
+</div>
+</details>
+<script>
+document.getElementById('expl-det').addEventListener('toggle',function(){
+  document.getElementById('expl-arr').style.transform=this.open?'rotate(90deg)':'rotate(0deg)';
+});
+(function(){
+  const cv=document.getElementById('hp3d');
+  const ctx=cv.getContext('2d');
+  const W=cv.width,H=cv.height,CX=145,CY=135,FOV=3.2,SC=102;
+
+  // Hyperplane normal (used to color points and compute plane-box intersection)
+  const N=[0.6,0.1,0.8]; // roughly points toward blue cluster
+
+  // Pre-computed plane corners: where N·p=0 intersects the 12 edges of [-1,1]^3
+  // Back face corners (-1..-1 in z): all have N·p<0; front (+1 in z): all >0
+  // => plane crosses all 4 vertical edges of the box
+  const PC=[[-1,-1,0.875],[1,-1,-0.625],[1,1,-0.875],[-1,1,0.625]];
+
+  // Box
+  const BC=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+  const BE=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+
+  // Points (c: 'b'=blue, 'r'=red, 'g'=gold)
+  const PTS=[
+    // labeled blue  (N·p > 0)
+    {p:[0.4,0.3,0.5],c:'b',lbl:'Interstellar'},
+    {p:[0.5,0.1,0.6],c:'b',lbl:'Gravity'},
+    {p:[0.3,0.5,0.4],c:'b',lbl:'Martian'},
+    {p:[0.2,0.4,0.6],c:'b',lbl:'2001'},
+    // unlabeled blue
+    {p:[0.7,0.4,0.2],c:'b'},{p:[0.1,0.5,0.7],c:'b'},
+    {p:[0.6,-0.3,0.5],c:'b'},{p:[0.3,0.7,0.3],c:'b'},
+    {p:[-0.2,0.2,0.8],c:'b'},{p:[0.5,0.6,0.4],c:'b'},
+    {p:[0.8,0.1,0.1],c:'b'},{p:[0.2,0.8,0.5],c:'b'},
+    // labeled red  (N·p < 0)
+    {p:[-0.5,-0.3,-0.5],c:'r',lbl:'Titanic'},
+    {p:[-0.4,-0.4,-0.5],c:'r',lbl:'Casablanca'},
+    // unlabeled red
+    {p:[-0.6,-0.2,-0.5],c:'r'},{p:[-0.3,-0.6,-0.7],c:'r'},
+    {p:[-0.7,0.2,-0.3],c:'r'},{p:[0.1,-0.4,-0.8],c:'r'},
+    {p:[-0.5,-0.5,-0.4],c:'r'},{p:[-0.8,0.3,-0.2],c:'r'},
+    {p:[-0.4,-0.7,-0.3],c:'r'},{p:[0.2,-0.6,-0.7],c:'r'},
+    // gold query vector near plane
+    {p:[0.2,0.3,0.1],c:'g',hi:true,lbl:'v'},
+  ];
+
+  function rY(v,t){const c=Math.cos(t),s=Math.sin(t);return[v[0]*c+v[2]*s,v[1],-v[0]*s+v[2]*c];}
+  function rX(v,t){const c=Math.cos(t),s=Math.sin(t);return[v[0],v[1]*c-v[2]*s,v[1]*s+v[2]*c];}
+  function tf(v,y,x){return rX(rY(v,y),x);}
+  function pr(v){const d=FOV+v[2];return{x:CX+v[0]*SC*FOV/d,y:CY-v[1]*SC*FOV/d,z:v[2]};}
+
+  let ang=0.5;
+  const PITCH=-0.3;
+
+  function frame(){
+    ctx.fillStyle='#0c0c0c';ctx.fillRect(0,0,W,H);
+
+    const tB=BC.map(v=>tf(v,ang,PITCH));
+    const tP=PC.map(v=>tf(v,ang,PITCH));
+    const tPts=PTS.map(p=>({...p,tv:tf(p.p,ang,PITCH)}));
+
+    // Box edges
+    BE.forEach(([a,b])=>{
+      const pa=pr(tB[a]),pb=pr(tB[b]);
+      const az=(tB[a][2]+tB[b][2])/2;
+      ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);
+      ctx.strokeStyle=az<-0.3?'rgba(190,190,190,0.18)':'rgba(190,190,190,0.48)';
+      ctx.lineWidth=az<-0.3?0.6:0.9;ctx.stroke();
+    });
+
+    // Plane depth
+    const pd=tP.reduce((s,v)=>s+v[2],0)/4;
+    const rl=[{type:'plane',depth:pd,tv:tP},
+              ...tPts.map(p=>({...p,type:'pt',depth:p.tv[2]}))];
+    rl.sort((a,b)=>a.depth-b.depth);
+
+    rl.forEach(o=>{
+      if(o.type==='plane'){
+        const ps=o.tv.map(v=>pr(v));
+        // grid
+        for(let t=0.25;t<1;t+=0.25){
+          ctx.beginPath();
+          ctx.moveTo(ps[0].x+(ps[3].x-ps[0].x)*t,ps[0].y+(ps[3].y-ps[0].y)*t);
+          ctx.lineTo(ps[1].x+(ps[2].x-ps[1].x)*t,ps[1].y+(ps[2].y-ps[1].y)*t);
+          ctx.strokeStyle='rgba(50,180,90,0.18)';ctx.lineWidth=0.5;ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(ps[0].x+(ps[1].x-ps[0].x)*t,ps[0].y+(ps[1].y-ps[0].y)*t);
+          ctx.lineTo(ps[3].x+(ps[2].x-ps[3].x)*t,ps[3].y+(ps[2].y-ps[3].y)*t);
+          ctx.strokeStyle='rgba(50,180,90,0.18)';ctx.lineWidth=0.5;ctx.stroke();
+        }
+        ctx.beginPath();ctx.moveTo(ps[0].x,ps[0].y);
+        ps.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));ctx.closePath();
+        ctx.fillStyle='rgba(45,165,85,0.2)';ctx.fill();
+        ctx.strokeStyle='rgba(55,200,100,0.65)';ctx.lineWidth=1.2;ctx.stroke();
+      } else {
+        const p=pr(o.tv);
+        const r=o.hi?7:5;
+        const base=o.c==='r'?[210,65,65]:o.c==='g'?[255,185,50]:[75,135,230];
+        const hi=base.map(c=>Math.min(255,c+75));
+        if(o.hi){
+          const gl=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r+8);
+          gl.addColorStop(0,'rgba(255,185,50,0.32)');gl.addColorStop(1,'rgba(255,185,50,0)');
+          ctx.fillStyle=gl;ctx.beginPath();ctx.arc(p.x,p.y,r+8,0,Math.PI*2);ctx.fill();
+        }
+        const gr=ctx.createRadialGradient(p.x-r*0.32,p.y-r*0.32,r*0.05,p.x,p.y,r);
+        gr.addColorStop(0,`rgb(${hi.join(',')})`);
+        gr.addColorStop(0.6,`rgb(${base.join(',')})`);
+        gr.addColorStop(1,`rgb(${base.map(c=>Math.max(0,c-55)).join(',')})`);
+        ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fillStyle=gr;ctx.fill();
+        if(o.lbl&&o.tv[2]>-0.45){
+          ctx.fillStyle=o.c==='r'?'#f08888':o.c==='g'?'#ffcc44':'#88aaf0';
+          ctx.font=(o.hi?'600 ':'')+'9px system-ui,sans-serif';
+          ctx.fillText(o.lbl,p.x+r+2,p.y+3);
+        }
+      }
+    });
+
+    // Normal arrow (from center toward N direction)
+    const nn=tf(N.map(v=>v*0.82),ang,PITCH);
+    const np=pr(nn);
+    ctx.beginPath();ctx.moveTo(CX,CY);ctx.lineTo(np.x,np.y);
+    ctx.strokeStyle='rgba(55,200,100,0.8)';ctx.lineWidth=1.8;ctx.stroke();
+    const dx=np.x-CX,dy=np.y-CY,ln=Math.sqrt(dx*dx+dy*dy);
+    if(ln>0){const ux=dx/ln,uy=dy/ln;
+      ctx.beginPath();ctx.moveTo(np.x,np.y);
+      ctx.lineTo(np.x-ux*8-uy*4,np.y-uy*8+ux*4);
+      ctx.lineTo(np.x-ux*8+uy*4,np.y-uy*8-ux*4);
+      ctx.closePath();ctx.fillStyle='rgba(55,200,100,0.8)';ctx.fill();}
+    ctx.fillStyle='rgba(55,200,100,0.9)';ctx.font='500 9px system-ui,sans-serif';
+    ctx.fillText('planes[0]',np.x+4,np.y-3);
+
+    ang+=0.004;requestAnimationFrame(frame);
+  }
+  frame();
+})();
+</script>
+
 <div class="topbar">
   <div class="ctrl-g">
     <div class="sl">num_bits</div>
