@@ -18,7 +18,6 @@ import numpy as np
 # Suppress console noise (tokenizer / HuggingFace warnings)
 os.environ["TOKENIZERS_PARALLELISM"]          = "false"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-os.environ["HF_HUB_OFFLINE"]                 = "1"
 warnings.filterwarnings("ignore")
 from transformers import logging as hf_logging
 hf_logging.set_verbosity_error()
